@@ -15,7 +15,9 @@ body {
 }
 
 .navbar-brand img {
-    height: 40px;
+    height: 60px;
+    width:140px;
+    border-radius:10px;
 }
 
 .navbar-search input {

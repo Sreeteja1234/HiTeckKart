@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -28,14 +29,24 @@ public class ProductServiceImpl implements ProductService {
     private final ProductRepo productRepo;
     private final CategoryRepo categoryRepo;
     private final EntityDtoMapper entityDtoMapper;
-    private final AwsS3Service awsS3Service;
 
-
+    // ✅ OPTIONAL dependency (AWS may not exist locally)
+    private final Optional<AwsS3Service> awsS3Service;
 
     @Override
-    public Response createProduct(Long categoryId, MultipartFile image, String name, String description, BigDecimal price) {
-        Category category = categoryRepo.findById(categoryId).orElseThrow(()-> new NotFoundException("Category not found"));
-        String productImageUrl = awsS3Service.saveImageToS3(image);
+    public Response createProduct(Long categoryId, MultipartFile image,
+                                  String name, String description, BigDecimal price) {
+
+        Category category = categoryRepo.findById(categoryId)
+                .orElseThrow(() -> new NotFoundException("Category not found"));
+
+        String productImageUrl = null;
+
+        if (image != null && !image.isEmpty()) {
+            productImageUrl = awsS3Service
+                    .map(s3 -> s3.saveImageToS3(image))
+                    .orElse(null);
+        }
 
         Product product = new Product();
         product.setCategory(category);
@@ -45,6 +56,7 @@ public class ProductServiceImpl implements ProductService {
         product.setImageUrl(productImageUrl);
 
         productRepo.save(product);
+
         return Response.builder()
                 .status(200)
                 .message("Product successfully created")
@@ -52,36 +64,42 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Response updateProduct(Long productId, Long categoryId, MultipartFile image, String name, String description, BigDecimal price) {
-        Product product = productRepo.findById(productId).orElseThrow(()-> new NotFoundException("Product Not Found"));
+    public Response updateProduct(Long productId, Long categoryId,
+                                  MultipartFile image, String name,
+                                  String description, BigDecimal price) {
 
-        Category category = null;
-        String productImageUrl = null;
+        Product product = productRepo.findById(productId)
+                .orElseThrow(() -> new NotFoundException("Product Not Found"));
 
-        if(categoryId != null ){
-             category = categoryRepo.findById(categoryId).orElseThrow(()-> new NotFoundException("Category not found"));
+        if (categoryId != null) {
+            Category category = categoryRepo.findById(categoryId)
+                    .orElseThrow(() -> new NotFoundException("Category not found"));
+            product.setCategory(category);
         }
-        if (image != null && !image.isEmpty()){
-            productImageUrl = awsS3Service.saveImageToS3(image);
+
+        if (image != null && !image.isEmpty()) {
+            awsS3Service
+                    .map(s3 -> s3.saveImageToS3(image))
+                    .ifPresent(product::setImageUrl);
         }
 
-        if (category != null) product.setCategory(category);
         if (name != null) product.setName(name);
         if (price != null) product.setPrice(price);
         if (description != null) product.setDescription(description);
-        if (productImageUrl != null) product.setImageUrl(productImageUrl);
 
         productRepo.save(product);
+
         return Response.builder()
                 .status(200)
                 .message("Product updated successfully")
                 .build();
-
     }
 
     @Override
     public Response deleteProduct(Long productId) {
-        Product product = productRepo.findById(productId).orElseThrow(()-> new NotFoundException("Product Not Found"));
+        Product product = productRepo.findById(productId)
+                .orElseThrow(() -> new NotFoundException("Product Not Found"));
+
         productRepo.delete(product);
 
         return Response.builder()
@@ -92,7 +110,9 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Response getProductById(Long productId) {
-        Product product = productRepo.findById(productId).orElseThrow(()-> new NotFoundException("Product Not Found"));
+        Product product = productRepo.findById(productId)
+                .orElseThrow(() -> new NotFoundException("Product Not Found"));
+
         ProductDto productDto = entityDtoMapper.mapProductToDtoBasic(product);
 
         return Response.builder()
@@ -103,7 +123,8 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Response getAllProducts() {
-        List<ProductDto> productList = productRepo.findAll(Sort.by(Sort.Direction.DESC, "id"))
+        List<ProductDto> productList = productRepo
+                .findAll(Sort.by(Sort.Direction.DESC, "id"))
                 .stream()
                 .map(entityDtoMapper::mapProductToDtoBasic)
                 .collect(Collectors.toList());
@@ -112,15 +133,16 @@ public class ProductServiceImpl implements ProductService {
                 .status(200)
                 .productList(productList)
                 .build();
-
     }
 
     @Override
     public Response getProductsByCategory(Long categoryId) {
         List<Product> products = productRepo.findByCategoryId(categoryId);
-        if(products.isEmpty()){
+
+        if (products.isEmpty()) {
             throw new NotFoundException("No Products found for this category");
         }
+
         List<ProductDto> productDtoList = products.stream()
                 .map(entityDtoMapper::mapProductToDtoBasic)
                 .collect(Collectors.toList());
@@ -129,20 +151,20 @@ public class ProductServiceImpl implements ProductService {
                 .status(200)
                 .productList(productDtoList)
                 .build();
-
     }
 
     @Override
     public Response searchProduct(String searchValue) {
-        List<Product> products = productRepo.findByNameContainingOrDescriptionContaining(searchValue, searchValue);
+        List<Product> products = productRepo
+                .findByNameContainingOrDescriptionContaining(searchValue, searchValue);
 
-        if (products.isEmpty()){
+        if (products.isEmpty()) {
             throw new NotFoundException("No Products Found");
         }
+
         List<ProductDto> productDtoList = products.stream()
                 .map(entityDtoMapper::mapProductToDtoBasic)
                 .collect(Collectors.toList());
-
 
         return Response.builder()
                 .status(200)
